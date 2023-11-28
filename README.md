@@ -1,2 +1,4 @@
-# belt-car
-belt car control code
+國立高雄科技大學
+機電工程系 四乙
+
+畢業專題：積木式無人小型履帶模組
