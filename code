@@ -1,0 +1,215 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2023 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
+
+UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
+
+/* USER CODE BEGIN PV */
+
+//Command variables
+uint8_t Data[6];
+	int comd, comd_L, comd_R;
+//PID control variables
+	double kp, ki, kd;
+	double proportional_L , intergral_L , derivative_L;
+	double proportional_R , intergral_R , derivative_R;
+	double output_L = 0;
+	double output_R = 0;
+	double error_L = 0;
+	double error_R = 0;
+	double now_L = 0;
+	double now_R = 0;
+	double pervious_L = 0;
+	double pervious_R = 0;
+
+//For debugging.
+	int test = 0;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_TIM2_Init(void);
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+
+void PID_R() {
+
+	error_R = abs(comd_R) - now_R;
+
+	proportional_R = error_R;
+	intergral_R += error_R;
+	derivative_R = error_R - pervious_R;
+
+	output_R = kp*proportional_R + ki*intergral_R + kd*derivative_R;
+	TIM1 -> CCR1 = output_R;
+	now_R = output_R;
+	pervious_R = error_R;
+}
+
+void PID_L() {
+
+	error_L = abs(comd_L) - now_L;
+
+	proportional_L = error_L;
+	intergral_L += error_L;
+	derivative_L = error_L - pervious_L;
+
+	output_L = kp*proportional_L + ki*intergral_L + kd*derivative_L;
+	TIM1 -> CCR2 = output_L;
+	now_L = output_L;
+	pervious_L = error_L;
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	PID_L();
+	PID_R();
+	//test += 1;
+}
+
+void D_control(int comd_L, int comd_R) {
+	//Left motor direction control.
+	if (comd_L > 0){
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
+	}
+	else if (comd_L < 0){
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
+	}
+
+	else if (comd_L == 0){
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
+		}
+	//Right motor direction control.
+	if (comd_R > 0){
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET);
+	}
+	else if (comd_R <0){
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+	}
+
+	else if (comd_R ==0){
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET);
+		}
+}
+
+void setup(){
+	kp = 0.09;
+	ki = 0.20;
+	kd = 0.01;
+}
+
+void get_comd(Data) {
+	comd = atoi((char *)Data);
+	comd_L = comd/1000-100;
+	comd_R = comd%1000-100;
+	D_control(comd_L, comd_R);
+}
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size){
+	if (huart == &huart2){
+		HAL_UART_Transmit_DMA(&huart2, Data, Size);
+		get_comd(Data);
+	}
+	HAL_UARTEx_ReceiveToIdle_DMA(&huart2, Data, sizeof(Data));
+	  __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
+}
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_USART2_UART_Init();
+  MX_TIM1_Init();
+  MX_TIM2_Init();
+  /* USER CODE BEGIN 2 */
+
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, Data, sizeof(Data));
+  __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);         // Active DMA receive.
+
+  setup(); //PID control parameter setup.
+  HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
